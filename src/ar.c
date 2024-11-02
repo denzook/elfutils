@@ -458,7 +458,7 @@ should_truncate_fname (size_t *name_max)
   return false;
 }
 #else
-static inline bool should_truncate_fname (size_t *)
+static inline bool should_truncate_fname (size_t *t __attribute__ ((unused)))
 {
 	return false;
 }
