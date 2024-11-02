@@ -26,7 +26,9 @@
 #include <gelf.h>
 #include <limits.h>
 #include <locale.h>
-#include <search.h>
+#if HAVE_DECL_HSEARCH
+#include <misc/search.h>
+#endif
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -439,6 +441,7 @@ copy_content (Elf *elf, int newfd, off_t off, size_t n)
   return write_retry (newfd, rawfile + off, n) != (ssize_t) n;
 }
 
+#ifdef HAVE_DECL_PATHCONF
 static inline bool
 should_truncate_fname (size_t *name_max)
 {
@@ -454,6 +457,12 @@ should_truncate_fname (size_t *name_max)
     }
   return false;
 }
+#else
+static inline bool should_truncate_fname (size_t *)
+{
+	return false;
+}
+#endif
 
 static int
 do_oper_extract (int oper, const char *arfname, char **argv, int argc,
@@ -471,6 +480,7 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
   Elf *elf;
   int fd = open_archive (arfname, O_RDONLY, 0, &elf, NULL, false);
 
+#if HAVE_DECL_HSEARCH
   if (hcreate (2 * argc) == 0)
     error_exit (errno, _("cannot create hash table"));
 
@@ -480,7 +490,7 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
       if (hsearch (entry, ENTER) == NULL)
 	error_exit (errno, _("cannot insert into hash table"));
     }
-
+#endif
   struct stat st;
   if (force_symtab)
     {
@@ -518,12 +528,25 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
       bool do_extract = argc <= 0;
       if (!do_extract)
 	{
+#if HAVE_DECL_HSEARCH
 	  ENTRY entry;
 	  entry.key = arhdr->ar_name;
 	  ENTRY *res = hsearch (entry, FIND);
 	  if (res != NULL && (instance < 0 || --instance == 0)
 	      && !found[(char **) res->data - argv])
 	    found[(char **) res->data - argv] = do_extract = true;
+#else
+		for (int cnt = 0; cnt < argc; ++cnt)
+	    {
+	      if (!strcmp (arhdr->ar_name, argv[cnt]))
+		{
+		  if ((instance < 0 || instance-- == 0) && !found[cnt])
+											 
+		    found[cnt] = do_extract = true;
+		  break;
+		}
+	    }	
+#endif   
 	}
 
       if (do_extract)
@@ -662,6 +685,7 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
 
 	  if (oper != oper_print)
 	    {
+#if HAVE_DECL_FCHMOD					
 	      /* Fix up the mode.  */
 	      if (unlikely (fchmod (xfd, arhdr->ar_mode) != 0))
 		{
@@ -669,9 +693,11 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
 			 arhdr->ar_name);
 		  status = 0;
 		}
+#endif	  
 
 	      if (preserve_dates)
 		{
+#ifdef _GL_WINDOWS_STAT_TIMESPEC			
 		  struct timespec tv[2];
 		  tv[0].tv_sec = arhdr->ar_date;
 		  tv[0].tv_nsec = 0;
@@ -685,6 +711,7 @@ do_oper_extract (int oper, const char *arfname, char **argv, int argc,
 			     arhdr->ar_name);
 		      status = 1;
 		    }
+#endif			
 		}
 
 	      /* If we used a temporary file, move it do the right
@@ -745,9 +772,9 @@ cannot rename temporary file to %.*s"),
       if (elf_end (subelf) != 0)
 	error (1, 0, "%s: %s", arfname, elf_errmsg (-1));
     }
-
+#if HAVE_DECL_HSEARCH
   hdestroy ();
-
+#endif
   if (force_symtab)
     {
       arlib_finalize ();
@@ -804,12 +831,16 @@ cannot rename temporary file to %.*s"),
 		  || copy_content (elf, newfd, rest_off, st.st_size - rest_off))
 		goto nonew_unlink;
 
+#if HAVE_DECL_FCHOWN
 	      /* Never complain about fchown failing.  */
 	      if (fchown (newfd, st.st_uid, st.st_gid) != 0) { ; }
+#endif
+#if HAVE_DECL_FCHMOD
 	      /* Set the mode of the new file to the same values the
 		 original file has.  */
 	      if (fchmod (newfd, st.st_mode & ALLPERMS) != 0)
 		goto nonew_unlink;
+#endif
 	      close (newfd);
 	      newfd = -1;
 	      if (rename (tmpfname, arfname) != 0)
@@ -925,6 +956,7 @@ do_oper_delete (const char *arfname, char **argv, int argc,
   struct stat st;
   int fd = open_archive (arfname, O_RDONLY, 0, &elf, &st, false);
 
+#if HAVE_DECL_HSEARCH  
   if (hcreate (2 * argc) == 0)
     error_exit (errno, _("cannot create hash table"));
 
@@ -934,7 +966,7 @@ do_oper_delete (const char *arfname, char **argv, int argc,
       if (hsearch (entry, ENTER) == NULL)
 	error_exit (errno, _("cannot insert into hash table"));
     }
-
+#endif
   arlib_init ();
 
   off_t cur_off = SARMAG;
@@ -952,12 +984,25 @@ do_oper_delete (const char *arfname, char **argv, int argc,
       bool do_delete = argc <= 0;
       if (!do_delete)
 	{
+#if HAVE_DECL_HSEARCH		
 	  ENTRY entry;
 	  entry.key = arhdr->ar_name;
 	  ENTRY *res = hsearch (entry, FIND);
 	  if (res != NULL && (instance < 0 || --instance == 0)
 	      && !found[(char **) res->data - argv])
 	    found[(char **) res->data - argv] = do_delete = true;
+#else
+	  for (int cnt = 0; cnt < argc; ++cnt)
+	    {
+	      if (!strcmp (arhdr->ar_name, argv[cnt]))
+	        {
+	          if ((instance < 0 || instance-- == 0) && !found[cnt])
+											 
+		    found[cnt] = do_delete = true;
+	          break;
+	        }
+		}
+#endif	  
 	}
 
       if (do_delete)
@@ -998,7 +1043,9 @@ do_oper_delete (const char *arfname, char **argv, int argc,
 
   arlib_finalize ();
 
+#if HAVE_DECL_HSEARCH
   hdestroy ();
+#endif
 
   /* Create a new, temporary file in the same directory as the
      original file.  */
@@ -1060,9 +1107,14 @@ do_oper_delete (const char *arfname, char **argv, int argc,
      has.  Never complain about fchown failing.  But do it before
      setting the mode (which might be reset/ignored if the owner is
      wrong.  */
+
+#if HAVE_DECL_FCHOWN  
   if (fchown (newfd, st.st_uid, st.st_gid) != 0) { ; }
+#endif  
+#if HAVE_DECL_FCHMOD	 
   if (fchmod (newfd, st.st_mode & ALLPERMS) != 0)
     goto nonew_unlink;
+#endif	
   close (newfd);
   newfd = -1;
   if (rename (tmpfname, arfname) != 0)
@@ -1125,12 +1177,14 @@ do_oper_insert (int oper, const char *arfname, char **argv, int argc,
       goto no_old;
     }
 
+#if HAVE_DECL_HSEARCH
   /* Store the names of all files from the command line in a hash
      table so that we can match it.  Note that when no file name is
      given we are basically doing nothing except recreating the
      index.  */
   if (oper != oper_qappend)
     {
+
       if (hcreate (2 * argc) == 0)
 	error_exit (errno, _("cannot create hash table"));
 
@@ -1143,7 +1197,7 @@ do_oper_insert (int oper, const char *arfname, char **argv, int argc,
 	    error_exit (errno, _("cannot insert into hash table"));
 	}
     }
-
+#endif
   /* While iterating over the current content of the archive we must
      determine a number of things: which archive members to keep,
      which are replaced, and where to insert the new members.  */
@@ -1180,13 +1234,32 @@ do_oper_insert (int oper, const char *arfname, char **argv, int argc,
 		after_memberelem = newp;
 	      member = NULL;
 	    }
-
+#if HAVE_DECL_HSEARCH
 	  ENTRY entry;
 	  entry.key = arhdr->ar_name;
 	  ENTRY *res = hsearch (entry, FIND);
 	  if (res != NULL && found[(char **) res->data - argv] == NULL)
+
 	    {
 	      found[(char **) res->data - argv] = newp;
+#else
+	  const char *arhdr_basename = xbasename (arhdr->ar_name);
+	  int xcnt;
+	  for (xcnt = 0; xcnt < argc; ++xcnt)
+									  
+																
+	    {
+	      if (full_path && strcmp (arhdr_basename, xbasename (argv[xcnt])))
+		continue;
+	      else if (!full_path && strcmp (arhdr->ar_name, argv[xcnt]))
+		continue;
+
+	      if (found[xcnt] == NULL) break;
+		}
+		if (xcnt < argc)
+		{
+			found[xcnt] = newp;
+#endif	
 
 	      /* If we insert before or after a certain element move
 		 all files to a special list.  */
@@ -1216,9 +1289,10 @@ do_oper_insert (int oper, const char *arfname, char **argv, int argc,
       if (elf_end (subelf) != 0)
 	error_exit (0, "%s: %s", arfname, elf_errmsg (-1));
     }
-
+#if HAVE_DECL_HSEARCH
   if (oper != oper_qappend)
     hdestroy ();
+#endif
 
  no_old:
   if (member != NULL)
@@ -1546,9 +1620,13 @@ do_oper_insert (int oper, const char *arfname, char **argv, int argc,
       /* Never complain about fchown failing.  But do it before
 	 setting the modes, or they might be reset/ignored if the
 	 owner is wrong.  */
+#if HAVE_DECL_FCHOWN
       if (fchown (newfd, st.st_uid, st.st_gid) != 0) { ; }
+#endif
+#if HAVE_DECL_FCHMOD	 	  
       if (fchmod (newfd, st.st_mode & ALLPERMS) != 0)
         goto nonew_unlink;
+#endif
       close (newfd);
       newfd = -1;
       if (rename (tmpfname, arfname) != 0)

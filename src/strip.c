@@ -37,13 +37,15 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-
 #include <elf-knowledge.h>
 #include <libebl.h>
 #include "libdwelf.h"
 #include <libeu.h>
 #include <system.h>
 #include <printversion.h>
+#if defined(HAVE_FUTIMENS) && !defined(_GL_WINDOWS_STAT_TIMESPEC)
+#include <stat-time.h>
+#endif
 
 typedef uint8_t GElf_Byte;
 
@@ -114,11 +116,18 @@ static int process_file (const char *fname);
 
 /* Handle one ELF file.  */
 static int handle_elf (int fd, Elf *elf, const char *prefix,
-		       const char *fname, mode_t mode, struct timespec tvp[2]);
+		       const char *fname, mode_t mode
+		   #ifdef  HAVE_FUTIMENS
+			   , struct timespec tvp[2]
+		   #endif
+			   );
 
 /* Handle all files contained in the archive.  */
-static int handle_ar (int fd, Elf *elf, const char *prefix, const char *fname,
-		      struct timespec tvp[2]) __attribute__ ((unused));
+static int handle_ar (int fd, Elf *elf, const char *prefix, const char *fname
+		   #ifdef HAVE_FUTIMENS
+			  , struct timespec tvp[2] 
+			#endif
+			  ) __attribute__ ((unused));
 
 static int debug_fd = -1;
 static char *tmp_debug_fname = NULL;
@@ -747,7 +756,9 @@ process_file (const char *fname)
      now.  We cannot use fstat() after opening the file since the open
      would change the access time.  */
   struct stat pre_st;
+#ifdef HAVE_FUTIMENS  
   struct timespec tv[2];
+#endif  
  again:
   if (preserve_dates)
     {
@@ -759,8 +770,15 @@ process_file (const char *fname)
 
       /* If we have to preserve the timestamp, we need it in the
 	 format utimes() understands.  */
+	 #ifdef HAVE_FUTIMENS
+	 #ifdef _GL_WINDOWS_STAT_TIMESPEC
       tv[0] = pre_st.st_atim;
       tv[1] = pre_st.st_mtim;
+	 #else
+	  tv[0] = get_stat_atime(&pre_st);
+      tv[1] = get_stat_mtime(&pre_st);
+	 #endif
+	 #endif
     }
 
   /* Open the file.  */
@@ -796,8 +814,11 @@ process_file (const char *fname)
   switch (elf_kind (elf))
     {
     case ELF_K_ELF:
-      result = handle_elf (fd, elf, NULL, fname, st.st_mode & ACCESSPERMS,
-			   preserve_dates ? tv : NULL);
+      result = handle_elf (fd, elf, NULL, fname, st.st_mode & ACCESSPERMS
+		#ifdef HAVE_FUTIMENS
+			   , preserve_dates ? tv : NULL
+		#endif
+				);
       break;
 
     case ELF_K_AR:
@@ -814,8 +835,11 @@ process_file (const char *fname)
 	  /* We would like to support ar archives, but currently it just
 	     doesn't work at all since we call elf_clone on the members
 	     which doesn't really support ar members.
-	     result = handle_ar (fd, elf, NULL, fname,
-				 preserve_dates ? tv : NULL);
+	     result = handle_ar (fd, elf, NULL, fname
+		 #ifdef HAVE_FUTIMENS
+				 , preserve_dates ? tv : NULL
+		 #endif
+				 );
 	   */
 	  error (0, 0, _("%s: no support for stripping archive"),
 		 fname);
@@ -979,7 +1003,11 @@ update_section_size (Elf_Scn *scn,
 
 static int
 handle_elf (int fd, Elf *elf, const char *prefix, const char *fname,
-	    mode_t mode, struct timespec tvp[2])
+	    mode_t mode
+#ifdef HAVE_FUTIMENS
+		, struct timespec tvp[2]
+#endif		
+		)
 {
   size_t prefix_len = prefix == NULL ? 0 : strlen (prefix);
   size_t fname_len = strlen (fname) + 1;
@@ -2477,7 +2505,10 @@ handle_elf (int fd, Elf *elf, const char *prefix, const char *fname,
       /* Create the real output file.  First rename, then change the
 	 mode.  */
       if (rename (tmp_debug_fname, debug_fname) != 0
-	  || fchmod (debug_fd, mode) != 0)
+#if HAVE_DECL_FCHMOD
+	  || fchmod (debug_fd, mode) != 0
+#endif	  
+	  )
 	{
 	  error (0, errno, _("while creating '%s'"), debug_fname);
 	  result = 1;
@@ -2674,6 +2705,7 @@ while computing checksum for debug information"));
 
   cleanup_debug ();
 
+#ifdef HAVE_FUTIMENS
   /* If requested, preserve the timestamp.  */
   if (tvp != NULL)
     {
@@ -2685,7 +2717,7 @@ cannot set access and modification date of '%s'"),
 	  result = 1;
 	}
     }
-
+#endif
   /* Close the file descriptor if we created a new file.  */
   if (output_fname != NULL)
     {
@@ -2714,8 +2746,11 @@ cleanup_debug (void)
 }
 
 static int
-handle_ar (int fd, Elf *elf, const char *prefix, const char *fname,
-	   struct timespec tvp[2])
+handle_ar (int fd, Elf *elf, const char *prefix, const char *fname
+#ifdef HAVE_FUTIMENS
+			, struct timespec tvp[2]
+#endif			
+		)
 {
   size_t prefix_len = prefix == NULL ? 0 : strlen (prefix);
   size_t fname_len = strlen (fname) + 1;
@@ -2741,16 +2776,24 @@ handle_ar (int fd, Elf *elf, const char *prefix, const char *fname,
       Elf_Arhdr *arhdr = elf_getarhdr (subelf);
 
       if (elf_kind (subelf) == ELF_K_ELF)
-	result |= handle_elf (fd, subelf, new_prefix, arhdr->ar_name, 0, NULL);
+	result |= handle_elf (fd, subelf, new_prefix, arhdr->ar_name, 0
+#ifdef HAVE_FUTIMENS
+						, NULL
+#endif						
+			);
       else if (elf_kind (subelf) == ELF_K_AR)
-	result |= handle_ar (fd, subelf, new_prefix, arhdr->ar_name, NULL);
+	result |= handle_ar (fd, subelf, new_prefix, arhdr->ar_name
+#ifdef HAVE_FUTIMENS
+						, NULL
+#endif
+			);
 
       /* Get next archive element.  */
       cmd = elf_next (subelf);
       if (unlikely (elf_end (subelf) != 0))
 	INTERNAL_ERROR (fname);
     }
-
+#ifdef HAVE_FUTIMENS
   if (tvp != NULL)
     {
       if (unlikely (futimens (fd, tvp) != 0))
@@ -2760,7 +2803,7 @@ cannot set access and modification date of '%s'"), fname);
 	  result = 1;
 	}
     }
-
+#endif
   if (unlikely (close (fd) != 0))
     error_exit (errno, _("while closing '%s'"), fname);
 

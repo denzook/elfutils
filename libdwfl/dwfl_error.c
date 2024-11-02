@@ -136,18 +136,23 @@ __libdwfl_seterrno (Dwfl_Error error)
 }
 
 
+#ifdef STRERROR_R_CHAR_P						
 static const char *
 errnomsg(int error)
 {
   /* Won't be changed by strerror_r, but not const so compiler doesn't throw warning */
   static char unknown[] = "unknown error";
 
-#ifdef STRERROR_R_CHAR_P
+
   return strerror_r (error, unknown, 0);
 #else
+static const char *
+errnomsg(int error  __attribute__((unused)))
+{
   /* To store the error message from strerror_r in a thread-safe manner */
-  static __thread char msg[128];
-  return strerror_r (error, msg, sizeof (msg)) ? unknown : msg;
+  //static __thread char msg[128];
+  //return strerror_r (error, msg, sizeof (msg)) ? unknown : msg;
+  return "Unknown error. See errno";								
 #endif
 }
 

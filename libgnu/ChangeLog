@@ -1,0 +1,11 @@
+2017-05-04  Ulf Hermann  <ulf.hermann@qt.io>
+
+	* Makefile.am: Use our own implementation of tdestroy if we have to.
+	* tdestroy.c: New file.
+
+2017-05-04  Ulf Hermann  <ulf.hermann@qt.io>
+
+	* Makefile.am: If GNU basename is unavailable add our own
+	implementation.
+	* basename-gnu.c: New file.
+

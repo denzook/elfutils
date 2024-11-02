@@ -261,11 +261,15 @@ handle_file (const char *fname)
 	    goto nonew_unlink;
 
 	  /* Never complain about fchown failing.  */
+	  #if HAVE_DECL_FCHOWN
 	  if (fchown (newfd, st.st_uid, st.st_gid) != 0) { ; }
+	  #endif
 	  /* Set the mode of the new file to the same values the
 	     original file has.  */
+	 #if HAVE_DECL_FCHMOD
 	  if (fchmod (newfd, st.st_mode & ALLPERMS) != 0)
 	    goto nonew_unlink;
+	 #endif
 	  close (newfd);
 	  newfd = -1;
 	  if (rename (tmpfname, fname) != 0)

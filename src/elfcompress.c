@@ -1342,6 +1342,7 @@ process_file (const char *fname)
   elf_end (elfnew);
   elfnew = NULL;
 
+#if HAVE_DECL_FCHOWN
   /* Try to match mode and owner.group of the original file.
      Note to set suid bits we have to make sure the owner is setup
      correctly first. Otherwise fchmod will drop them silently
@@ -1349,9 +1350,12 @@ process_file (const char *fname)
   if (fchown (fdnew, st.st_uid, st.st_gid) != 0)
     if (verbose >= 0)
       error (0, errno, "Couldn't fchown %s", fnew);
+#endif
+#if HAVE_DECL_FCHMOD
   if (fchmod (fdnew, st.st_mode & ALLPERMS) != 0)
     if (verbose >= 0)
       error (0, errno, "Couldn't fchmod %s", fnew);
+#endif
 
   /* Finally replace the old file with the new file.  */
   if (foutput == NULL)

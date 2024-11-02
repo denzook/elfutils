@@ -35,8 +35,6 @@
 #include <dwarf.h>
 #include <argp.h>
 #include <cstring>
-#include <set>
-#include <string>
 #include <cassert>
 #include <gelf.h>
 #include <memory>
@@ -47,16 +45,22 @@
 
 #include <libdwfl.h>
 #include <fcntl.h>
-#include <iostream>
 #include <libdw.h>
-#include <sstream>
-#include <vector>
 
 /* Libraries for use by the --zip option */
 #ifdef HAVE_LIBARCHIVE
 #include <archive.h>
 #include <archive_entry.h>
 #endif
+
+#if( getline  == rpl_getline )
+	# undef getline
+#endif
+#include <iostream>
+#include <set>
+#include <string>
+#include <sstream>
+#include <vector>
 
 /* If fts.h is included before config.h, its indirect inclusions may not
    give us the right LFS aliases of these functions, so map them manually.  */

@@ -447,6 +447,10 @@ process_chunk (const char *fname, const unsigned char *buf, off_t to,
     *unprinted = xstrndup ((const char *) start, curlen);
 }
 
+#ifndef roundup
+#define roundup(x, y) ((((x) + ((y) - 1)) / (y)) * (y))
+#endif
+   
 
 /* Map a file in as large chunks as possible.  */
 static void *
@@ -568,9 +572,11 @@ read_block (int fd, const char *fname, off_t fdlen, off_t from, off_t to)
       elfmap_off = from & ~(ps - 1);
       elfmap_base = elfmap = map_file (fd, elfmap_off, fdlen, &elfmap_size);
 
+#if HAVE_DECL_POSIX_FADVISE
       if (unlikely (elfmap == MAP_FAILED))
 	/* Let the kernel know we are going to read everything in sequence.  */
 	(void) posix_fadvise (fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
     }
 
   if (unlikely (elfmap == MAP_FAILED))
